@@ -1,0 +1,30 @@
+name: Monitor da Caixa
+on:
+  schedule:
+    # Roda todos os dias às 09:00 (horário de Brasília) / 12:00 UTC
+    - cron: '0 12 * * *'
+  workflow_dispatch: # Permite rodar manualmente clicando num botão
+
+jobs:
+  rodar-monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Instalar dependências
+        run: pip install pandas requests
+      - name: Rodar script
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python monitor.py
+      - name: Salvar nova base de dados
+        run: |
+          git config --global user.name 'Robo Caixa'
+          git config --global user.email 'robo@caixa.com'
+          git add base_imoveis.csv
+          git commit -m "Atualizando base de imoveis" || exit 0
+          git push

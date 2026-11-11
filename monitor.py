@@ -12,7 +12,11 @@ def enviar_telegram(mensagem):
     requests.post(url, data={"chat_id": CHAT_ID, "text": mensagem, "parse_mode": "HTML"})
 
 def monitorar():
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    # Disfarçando o robô para parecer um navegador de verdade (Chrome)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+    }
     
     for estado in ESTADOS:
         print(f"Verificando estado: {estado}...")
@@ -21,20 +25,38 @@ def monitorar():
         arquivo_hoje = f"hoje_{estado}.csv"
         
         # 1. Baixa a lista de hoje da Caixa
-        resposta = requests.get(url_caixa, headers=headers)
-        
-        with open(arquivo_hoje, "wb") as f:
-            f.write(resposta.content)
+        try:
+            resposta = requests.get(url_caixa, headers=headers, timeout=15)
+            with open(arquivo_hoje, "wb") as f:
+                f.write(resposta.content)
+                
+            df_hoje = pd.read_csv(arquivo_hoje, sep=';', encoding='latin1', on_bad_lines='skip')
             
-        df_hoje = pd.read_csv(arquivo_hoje, sep=';', encoding='latin1', on_bad_lines='skip')
-        
+            # --- BLINDAGEM CONTRA O ERRO ---
+            # Verifica se a coluna realmente existe. Se a Caixa bloqueou, ele avisa e pula.
+            if 'Número do imóvel' not in df_hoje.columns:
+                print(f"⚠️ Erro ao ler dados de {estado}. A Caixa bloqueou o download hoje.")
+                continue 
+                
+        except Exception as e:
+            print(f"Erro ao baixar/processar {estado}: {e}")
+            continue
+            
         # 2. Se não existir a base anterior, cria e avisa
         if not os.path.exists(arquivo_base):
             df_hoje.to_csv(arquivo_base, sep=';', encoding='latin1', index=False)
             enviar_telegram(f"🤖 Monitoramento ativado para {estado}! A partir da próxima verificação, você receberá os novos imóveis.")
             continue
 
-        df_base = pd.read_csv(arquivo_base, sep=';', encoding='latin1', on_bad_lines='skip')
+        # Carrega a base antiga e blinda contra erros de leitura
+        try:
+            df_base = pd.read_csv(arquivo_base, sep=';', encoding='latin1', on_bad_lines='skip')
+            if 'Número do imóvel' not in df_base.columns:
+                df_hoje.to_csv(arquivo_base, sep=';', encoding='latin1', index=False)
+                continue
+        except Exception:
+            df_hoje.to_csv(arquivo_base, sep=';', encoding='latin1', index=False)
+            continue
         
         # 3. Compara os imóveis usando a coluna de ID
         novos = df_hoje[~df_hoje['Número do imóvel'].isin(df_base['Número do imóvel'])]

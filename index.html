@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Imóveis - Caixa</title>
+    <!-- Tailwind CSS para o design -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PapaParse para ler o ficheiro CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        body { background-color: #f3f4f6; }
+        .loader { border-top-color: #3b82f6; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="text-gray-800 font-sans p-6">
+
+    <div class="max-w-6xl mx-auto">
+        <header class="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-sm mb-8 gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-blue-700">🏠 Oportunidades da Caixa</h1>
+                <p class="text-sm text-gray-500 mt-1">Atualizado automaticamente pelo seu robô</p>
+            </div>
+            
+            <div class="flex gap-4 w-full md:w-auto">
+                <select id="estadoSelect" class="border p-2 rounded-lg bg-gray-50 flex-1 md:w-32 outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="PB">Paraíba (PB)</option>
+                    <option value="SP">São Paulo (SP)</option>
+                </select>
+                <input type="text" id="searchInput" placeholder="Buscar cidade ou bairro..." class="border p-2 rounded-lg bg-gray-50 flex-1 outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+        </header>
+
+        <div id="loading" class="flex flex-col items-center justify-center py-20 hidden">
+            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"></div>
+            <p class="text-gray-500 font-medium">A carregar imóveis...</p>
+        </div>
+
+        <div id="stats" class="mb-4 text-gray-600 font-medium hidden"></div>
+
+        <div id="grid-imoveis" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Os cards dos imóveis vão aparecer aqui -->
+        </div>
+    </div>
+
+    <script>
+        let imoveisGlobais = [];
+
+        // Função para detetar o nome correto da coluna
+        function getCol(row, termos) {
+            const chave = Object.keys(row).find(k => termos.some(t => k.toLowerCase().includes(t)));
+            return chave ? row[chave] : 'N/D';
+        }
+
+        // Gera o link da Caixa
+        function getLink(row) {
+            let num = getCol(row, ['número do imóvel', 'numero do imovel', 'id']);
+            if (num && num !== 'N/D') {
+                num = num.toString().replace('.0', '').trim();
+                return `https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=${num}`;
+            }
+            return '#';
+        }
+
+        // Limpa e formata o preço para ordenação
+        function extrairPreco(valorStr) {
+            if (!valorStr || valorStr === 'N/D') return 0;
+            const limpo = valorStr.toString().replace(/[^\d,]/g, '').replace(',', '.');
+            return parseFloat(limpo) || 0;
+        }
+
+        function formatarMoeda(valor) {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
+        }
+
+        // Carrega o CSV diretamente do repositório
+        function carregarDados() {
+            const estado = document.getElementById('estadoSelect').value;
+            const url = `base_imoveis_${estado}.csv`; // Caminho relativo
+            
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('grid-imoveis').innerHTML = '';
+            document.getElementById('stats').classList.add('hidden');
+
+            // Adiciona um timestamp na URL para forçar o navegador a pegar a versão mais recente do dia
+            fetch(`${url}?t=${new Date().getTime()}`)
+                .then(response => {
+                    if (!response.ok) throw new Error("Ficheiro ainda não criado ou indisponível.");
+                    return response.text();
+                })
+                .then(csv => {
+                    Papa.parse(csv, {
+                        delimiter: ";",
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: function(results) {
+                            imoveisGlobais = results.data;
+                            renderizarImoveis();
+                            document.getElementById('loading').classList.add('hidden');
+                        }
+                    });
+                })
+                .catch(erro => {
+                    document.getElementById('loading').classList.add('hidden');
+                    document.getElementById('grid-imoveis').innerHTML = `
+                        <div class="col-span-full text-center py-10 bg-red-50 text-red-600 rounded-lg">
+                            <p class="font-bold">Aviso: ${erro.message}</p>
+                            <p class="text-sm mt-2">Certifique-se de que o robô já executou e criou o ficheiro <b>base_imoveis_${estado}.csv</b>.</p>
+                        </div>
+                    `;
+                });
+        }
+
+        function renderizarImoveis() {
+            const termo = document.getElementById('searchInput').value.toLowerCase();
+            const grid = document.getElementById('grid-imoveis');
+            grid.innerHTML = '';
+
+            // Filtrar
+            let filtrados = imoveisGlobais.filter(row => {
+                const cidade = getCol(row, ['cidade']).toLowerCase();
+                const bairro = getCol(row, ['bairro']).toLowerCase();
+                return cidade.includes(termo) || bairro.includes(termo);
+            });
+
+            // Ordenar por preço (mais barato primeiro)
+            filtrados.sort((a, b) => {
+                let pa = extrairPreco(getCol(a, ['preço', 'preco', 'valor']));
+                let pb = extrairPreco(getCol(b, ['preço', 'preco', 'valor']));
+                return pa - pb;
+            });
+
+            document.getElementById('stats').innerText = `Mostrando ${filtrados.length} imóveis (Ordenados do mais barato para o mais caro)`;
+            document.getElementById('stats').classList.remove('hidden');
+
+            filtrados.forEach(row => {
+                const cidade = getCol(row, ['cidade']);
+                const bairro = getCol(row, ['bairro']);
+                const tipo = getCol(row, ['tipo', 'descrição', 'descricao']);
+                const precoCru = getCol(row, ['preço', 'preco', 'valor de venda', 'valor']);
+                const precoFormatado = formatarMoeda(extrairPreco(precoCru));
+                const link = getLink(row);
+
+                const card = document.createElement('div');
+                card.className = "bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition duration-200 border border-gray-100 flex flex-col justify-between";
+                
+                card.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded-md uppercase tracking-wider">${tipo.substring(0, 15)}${tipo.length > 15 ? '...' : ''}</span>
+                        </div>
+                        <h2 class="text-lg font-bold text-gray-800 mb-1 leading-tight">${bairro}</h2>
+                        <p class="text-gray-500 text-sm mb-4"><i class="fas fa-map-marker-alt mr-1"></i>${cidade}</p>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-extrabold text-emerald-600 mb-4">${precoFormatado}</p>
+                        <a href="${link}" target="_blank" class="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200">
+                            Ver na Caixa
+                        </a>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        document.getElementById('estadoSelect').addEventListener('change', carregarDados);
+        document.getElementById('searchInput').addEventListener('input', renderizarImoveis);
+
+        // Inicia o carregamento ao abrir a página
+        window.onload = carregarDados;
+    </script>
+</body>
+</html>

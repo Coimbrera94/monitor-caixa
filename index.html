@@ -3,67 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel de Imóveis - Caixa</title>
-    <!-- Tailwind CSS para o design -->
+    <title>Imóveis Caixa - Radar Inteligente</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- PapaParse para ler o ficheiro CSV -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { background-color: #f3f4f6; }
-        .loader { border-top-color: #3b82f6; animation: spinner 1.5s linear infinite; }
-        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        body { background-color: #f7f9fa; font-family: 'Inter', system-ui, sans-serif; }
+        .switch-checkbox:checked { right: 0; border-color: #2563eb; }
+        .switch-checkbox:checked + .switch-label { background-color: #2563eb; }
     </style>
 </head>
-<body class="text-gray-800 font-sans p-6">
+<body class="text-gray-800">
 
-    <div class="max-w-6xl mx-auto">
-        <header class="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl shadow-sm mb-8 gap-4">
-            <div>
-                <h1 class="text-2xl font-bold text-blue-700">🏠 Oportunidades da Caixa</h1>
-                <p class="text-sm text-gray-500 mt-1">Atualizado automaticamente pelo seu robô</p>
+    <!-- Navbar Estilo QuintoAndar -->
+    <nav class="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-house-signal text-blue-600 text-2xl"></i>
+                    <span class="font-bold text-xl tracking-tight text-blue-900">Radar<span class="text-blue-600">Caixa</span></span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <select id="estadoSelect" class="bg-gray-100 border-none text-sm font-semibold text-gray-700 py-2 px-4 rounded-full cursor-pointer outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="PB">Paraíba (PB)</option>
+                        <option value="SP">São Paulo (SP)</option>
+                    </select>
+                </div>
             </div>
-            
-            <div class="flex gap-4 w-full md:w-auto">
-                <select id="estadoSelect" class="border p-2 rounded-lg bg-gray-50 flex-1 md:w-32 outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="PB">Paraíba (PB)</option>
-                    <option value="SP">São Paulo (SP)</option>
-                </select>
-                <input type="text" id="searchInput" placeholder="Buscar cidade ou bairro..." class="border p-2 rounded-lg bg-gray-50 flex-1 outline-none focus:ring-2 focus:ring-blue-500">
-            </div>
-        </header>
-
-        <div id="loading" class="flex flex-col items-center justify-center py-20 hidden">
-            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"></div>
-            <p class="text-gray-500 font-medium">A carregar imóveis...</p>
         </div>
+    </nav>
 
-        <div id="stats" class="mb-4 text-gray-600 font-medium hidden"></div>
+    <!-- Barra de Filtros -->
+    <div class="bg-white shadow-sm border-b border-gray-200 py-4 mb-6">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row gap-4 items-center justify-between">
+            
+            <div class="flex items-center gap-3 w-full md:w-auto">
+                <div class="relative w-full md:w-80">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-gray-400"></i>
+                    <input type="text" id="searchInput" placeholder="Buscar cidade ou bairro..." class="w-full bg-gray-100 border-none rounded-full py-2 pl-10 pr-4 outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+                </div>
+                <select id="filtroPreco" class="bg-gray-100 border-none rounded-full py-2 px-4 outline-none text-sm cursor-pointer hidden md:block">
+                    <option value="999999999">Qualquer Valor</option>
+                    <option value="150000">Até R$ 150.000</option>
+                    <option value="300000">Até R$ 300.000</option>
+                    <option value="500000">Até R$ 500.000</option>
+                </select>
+            </div>
 
-        <div id="grid-imoveis" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- Os cards dos imóveis vão aparecer aqui -->
+            <!-- Toggle Novidades -->
+            <div class="flex items-center gap-2 bg-blue-50 py-2 px-4 rounded-full border border-blue-100">
+                <span class="text-sm font-bold text-blue-800">Mostrar apenas Novidades</span>
+                <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                    <input type="checkbox" name="toggle" id="toggleNovos" checked class="switch-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer z-10 transition-transform duration-200 ease-in-out border-gray-300 right-5"/>
+                    <label for="toggleNovos" class="switch-label block overflow-hidden h-5 rounded-full bg-gray-300 cursor-pointer transition-colors duration-200 ease-in-out"></label>
+                </div>
+            </div>
+
         </div>
     </div>
+
+    <!-- Container Principal -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+        
+        <div id="stats" class="mb-6 flex justify-between items-end">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900" id="tituloPagina">Carregando imóveis...</h1>
+                <p class="text-gray-500 text-sm mt-1" id="subtituloPagina">Buscando as melhores oportunidades do dia.</p>
+            </div>
+        </div>
+
+        <div id="loading" class="flex flex-col items-center justify-center py-20">
+            <i class="fa-solid fa-circle-notch fa-spin text-4xl text-blue-600 mb-4"></i>
+            <p class="text-gray-500 font-medium">Lendo dados da Caixa...</p>
+        </div>
+
+        <div id="grid-imoveis" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <!-- Cards gerados via JS -->
+        </div>
+
+    </main>
 
     <script>
         let imoveisGlobais = [];
 
-        // Função para detetar o nome correto da coluna
         function getCol(row, termos) {
             const chave = Object.keys(row).find(k => termos.some(t => k.toLowerCase().includes(t)));
             return chave ? row[chave] : 'N/D';
         }
 
-        // Gera o link da Caixa
-        function getLink(row) {
-            let num = getCol(row, ['número do imóvel', 'numero do imovel', 'id']);
-            if (num && num !== 'N/D') {
-                num = num.toString().replace('.0', '').trim();
-                return `https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=${num}`;
-            }
-            return '#';
-        }
-
-        // Limpa e formata o preço para ordenação
         function extrairPreco(valorStr) {
             if (!valorStr || valorStr === 'N/D') return 0;
             const limpo = valorStr.toString().replace(/[^\d,]/g, '').replace(',', '.');
@@ -71,22 +98,27 @@
         }
 
         function formatarMoeda(valor) {
-            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(valor);
         }
 
-        // Carrega o CSV diretamente do repositório
+        function getLink(row) {
+            let num = getCol(row, ['número do imóvel', 'numero do imovel', 'id']);
+            if (num && num !== 'N/D') {
+                return `https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel=${num.toString().replace('.0', '').trim()}`;
+            }
+            return '#';
+        }
+
         function carregarDados() {
             const estado = document.getElementById('estadoSelect').value;
-            const url = `base_imoveis_${estado}.csv`; // Caminho relativo
+            const url = `base_imoveis_${estado}.csv?t=${new Date().getTime()}`;
             
-            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('loading').style.display = 'flex';
             document.getElementById('grid-imoveis').innerHTML = '';
-            document.getElementById('stats').classList.add('hidden');
-
-            // Adiciona um timestamp na URL para forçar o navegador a pegar a versão mais recente do dia
-            fetch(`${url}?t=${new Date().getTime()}`)
+            
+            fetch(url)
                 .then(response => {
-                    if (!response.ok) throw new Error("Ficheiro ainda não criado ou indisponível.");
+                    if (!response.ok) throw new Error("Base não encontrada.");
                     return response.text();
                 })
                 .then(csv => {
@@ -97,77 +129,104 @@
                         complete: function(results) {
                             imoveisGlobais = results.data;
                             renderizarImoveis();
-                            document.getElementById('loading').classList.add('hidden');
+                            document.getElementById('loading').style.display = 'none';
                         }
                     });
                 })
                 .catch(erro => {
-                    document.getElementById('loading').classList.add('hidden');
-                    document.getElementById('grid-imoveis').innerHTML = `
-                        <div class="col-span-full text-center py-10 bg-red-50 text-red-600 rounded-lg">
-                            <p class="font-bold">Aviso: ${erro.message}</p>
-                            <p class="text-sm mt-2">Certifique-se de que o robô já executou e criou o ficheiro <b>base_imoveis_${estado}.csv</b>.</p>
-                        </div>
-                    `;
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('tituloPagina').innerText = "Ops! Base Indisponível";
+                    document.getElementById('subtituloPagina').innerText = "O robô ainda não gerou o ficheiro deste estado.";
                 });
         }
 
         function renderizarImoveis() {
             const termo = document.getElementById('searchInput').value.toLowerCase();
+            const maxPreco = parseFloat(document.getElementById('filtroPreco').value);
+            const mostrarNovos = document.getElementById('toggleNovos').checked;
             const grid = document.getElementById('grid-imoveis');
             grid.innerHTML = '';
 
-            // Filtrar
+            // Identificar a data mais recente da base para o filtro "Apenas Novidades"
+            let datas = imoveisGlobais.map(r => r.Data_Inclusao || '2000-01-01');
+            let maxData = datas.sort().reverse()[0]; 
+
             let filtrados = imoveisGlobais.filter(row => {
                 const cidade = getCol(row, ['cidade']).toLowerCase();
                 const bairro = getCol(row, ['bairro']).toLowerCase();
-                return cidade.includes(termo) || bairro.includes(termo);
+                const preco = extrairPreco(getCol(row, ['preço de venda', 'preco de venda', 'preço', 'valor']));
+                const dataInclusao = row.Data_Inclusao || '2000-01-01';
+
+                let passaBusca = cidade.includes(termo) || bairro.includes(termo);
+                let passaPreco = preco <= maxPreco;
+                let passaNovidade = mostrarNovos ? (dataInclusao === maxData) : true;
+
+                return passaBusca && passaPreco && passaNovidade;
             });
 
-            // Ordenar por preço (mais barato primeiro)
-            filtrados.sort((a, b) => {
-                let pa = extrairPreco(getCol(a, ['preço', 'preco', 'valor']));
-                let pb = extrairPreco(getCol(b, ['preço', 'preco', 'valor']));
-                return pa - pb;
-            });
+            // Ordena pelo melhor negócio (Menor Preço)
+            filtrados.sort((a, b) => extrairPreco(getCol(a, ['preço de venda'])) - extrairPreco(getCol(b, ['preço de venda'])));
 
-            document.getElementById('stats').innerText = `Mostrando ${filtrados.length} imóveis (Ordenados do mais barato para o mais caro)`;
-            document.getElementById('stats').classList.remove('hidden');
+            // Atualiza Textos
+            document.getElementById('tituloPagina').innerText = mostrarNovos ? "Imóveis Novos de Hoje" : "Todos os Imóveis";
+            let dataFormatada = maxData.split('-').reverse().join('/');
+            document.getElementById('subtituloPagina').innerHTML = `Encontrámos <b>${filtrados.length} oportunidades</b> disponíveis ${mostrarNovos ? `(Adicionados em ${dataFormatada})` : ''}.`;
+
+            if(filtrados.length === 0) {
+                grid.innerHTML = `<div class="col-span-full py-10 text-center text-gray-500"><i class="fa-solid fa-folder-open text-4xl mb-3"></i><p>Nenhum imóvel encontrado com estes filtros.</p></div>`;
+                return;
+            }
 
             filtrados.forEach(row => {
                 const cidade = getCol(row, ['cidade']);
                 const bairro = getCol(row, ['bairro']);
-                const tipo = getCol(row, ['tipo', 'descrição', 'descricao']);
-                const precoCru = getCol(row, ['preço', 'preco', 'valor de venda', 'valor']);
-                const precoFormatado = formatarMoeda(extrairPreco(precoCru));
-                const link = getLink(row);
+                const tipo = getCol(row, ['tipo', 'descrição', 'descricao']).split(',')[0]; 
+                
+                const precoVenda = extrairPreco(getCol(row, ['preço de venda', 'preco de venda', 'preço', 'valor']));
+                const avaliacao = extrairPreco(getCol(row, ['avaliação', 'avaliacao']));
+                
+                // Calcula Desconto
+                let badgeDesconto = '';
+                if(avaliacao > precoVenda && precoVenda > 0) {
+                    let perc = Math.round((1 - (precoVenda/avaliacao)) * 100);
+                    if(perc > 5) {
+                        badgeDesconto = `<span class="absolute top-3 left-3 bg-rose-500 text-white text-xs font-bold px-2 py-1 rounded-md shadow-sm"><i class="fa-solid fa-fire mr-1"></i>${perc}% OFF</span>`;
+                    }
+                }
 
+                // Cria o Card
                 const card = document.createElement('div');
-                card.className = "bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition duration-200 border border-gray-100 flex flex-col justify-between";
+                card.className = "bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col group cursor-pointer relative";
+                card.onclick = () => window.open(getLink(row), '_blank');
                 
                 card.innerHTML = `
-                    <div>
-                        <div class="flex justify-between items-start mb-2">
-                            <span class="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded-md uppercase tracking-wider">${tipo.substring(0, 15)}${tipo.length > 15 ? '...' : ''}</span>
-                        </div>
-                        <h2 class="text-lg font-bold text-gray-800 mb-1 leading-tight">${bairro}</h2>
-                        <p class="text-gray-500 text-sm mb-4"><i class="fas fa-map-marker-alt mr-1"></i>${cidade}</p>
+                    <div class="h-40 bg-gray-100 flex items-center justify-center relative overflow-hidden group-hover:bg-blue-50 transition-colors">
+                        <i class="fa-regular fa-image text-gray-300 text-4xl group-hover:text-blue-200 transition-colors"></i>
+                        ${badgeDesconto}
+                        ${(row.Data_Inclusao === maxData && !mostrarNovos) ? '<span class="absolute top-3 right-3 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-md shadow-sm">NOVO</span>' : ''}
                     </div>
-                    <div>
-                        <p class="text-2xl font-extrabold text-emerald-600 mb-4">${precoFormatado}</p>
-                        <a href="${link}" target="_blank" class="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200">
-                            Ver na Caixa
-                        </a>
+                    <div class="p-5 flex-1 flex flex-col justify-between">
+                        <div>
+                            <p class="text-gray-500 text-xs uppercase font-semibold tracking-wider mb-1">${tipo}</p>
+                            <h2 class="text-base font-bold text-gray-900 leading-snug mb-1 truncate">${bairro}</h2>
+                            <p class="text-gray-500 text-sm truncate mb-4"><i class="fa-solid fa-location-dot text-gray-400 mr-1"></i>${cidade}</p>
+                        </div>
+                        <div>
+                            ${avaliacao > precoVenda ? `<p class="text-xs text-gray-400 line-through">Avaliação: ${formatarMoeda(avaliacao)}</p>` : ''}
+                            <p class="text-2xl font-extrabold text-blue-700">${formatarMoeda(precoVenda)}</p>
+                        </div>
                     </div>
                 `;
                 grid.appendChild(card);
             });
         }
 
+        // Eventos
         document.getElementById('estadoSelect').addEventListener('change', carregarDados);
         document.getElementById('searchInput').addEventListener('input', renderizarImoveis);
+        document.getElementById('filtroPreco').addEventListener('change', renderizarImoveis);
+        document.getElementById('toggleNovos').addEventListener('change', renderizarImoveis);
 
-        // Inicia o carregamento ao abrir a página
         window.onload = carregarDados;
     </script>
 </body>

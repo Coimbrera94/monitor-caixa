@@ -3,6 +3,7 @@ import requests
 import os
 import io
 import time
+from datetime import datetime
 
 ESTADOS = ["PB", "SP"]
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip().replace("<", "").replace(">", "")
@@ -32,12 +33,10 @@ def obter_valor_col(row, termos, padrao='N/D'):
     return padrao
 
 def obter_link_imovel(row):
-    # Verifica se a própria planilha já traz coluna com link direto
     link_csv = obter_valor_col(row, ['link'], padrao='')
     if link_csv and link_csv.lower().startswith('http'):
         return link_csv.replace('&', '&amp;')
 
-    # Monta a URL direta oficial da Caixa pelo número de identificação do imóvel
     num = str(row.get('Número do imóvel', '')).strip()
     if num.endswith('.0'):
         num = num[:-2]
@@ -89,10 +88,10 @@ def obter_csv_caixa(estado, max_tentativas=3):
 
                     if col_id:
                         df = df.rename(columns={col_id: 'Número do imóvel'})
-                        print(f"[{estado}] Sucesso na tentativa {tentativa}! Total de linhas: {len(df)}")
+                        print(f"[{estado}] Sucesso! Total de linhas: {len(df)}")
                         return df
             else:
-                print(f"[{estado}] Retorno inconsistente (Status: {resp.status_code}, Tamanho: {len(resp.content)} bytes)")
+                print(f"[{estado}] Retorno inconsistente (Status: {resp.status_code})")
 
         except Exception as e:
             print(f"[{estado}] Erro na tentativa {tentativa}: {e}")
@@ -104,39 +103,27 @@ def obter_csv_caixa(estado, max_tentativas=3):
 
 def monitorar():
     relatorio_geral = []
+    # Data no formato Ano-Mês-Dia para facilitar a ordenação e filtragem no site
+    data_atual = datetime.now().strftime("%Y-%m-%d")
 
     for estado in ESTADOS:
         print(f"A processar estado: {estado}...")
         df_hoje = obter_csv_caixa(estado)
 
         if df_hoje is None or df_hoje.empty:
-            enviar_telegram(f"⚠️ <b>Aviso ({estado}):</b> Não foi possível descarregar os dados após 3 tentativas.")
+            enviar_telegram(f"⚠️ <b>Aviso ({estado}):</b> Não foi possível descarregar os dados.")
             continue
 
         arquivo_base = f"base_imoveis_{estado}.csv"
+        
+        # Carimba todos os imóveis da lista de hoje com a data atual inicialmente
+        df_hoje['Data_Inclusao'] = data_atual
 
+        # Se for a primeira vez que corre, salva e avisa
         if not os.path.exists(arquivo_base):
             df_hoje.to_csv(arquivo_base, sep=';', encoding='utf-8', index=False)
-            
-            exemplo = df_hoje.iloc[0]
-            cidade = obter_valor_col(exemplo, ['cidade'])
-            bairro = obter_valor_col(exemplo, ['bairro'])
-            preco = obter_valor_col(exemplo, ['preço', 'preco', 'preã§o', 'valor'])
-            link_exemplo = obter_link_imovel(exemplo)
-
-            msg = (
-                f"🎉 <b>Base catalogada com sucesso para {estado}!</b>\n"
-                f"Total de imóveis ativos: <b>{len(df_hoje)}</b>\n\n"
-                f"<b>Exemplo de imóvel capturado:</b>\n"
-                f"📍 {cidade} - {bairro}\n"
-                f"💰 R$ {preco}\n"
-            )
-            if link_exemplo:
-                msg += f"🔗 <a href='{link_exemplo}'>Ver imóvel na Caixa</a>\n"
-            msg += "\n<i>O rastreador já está operacional na nuvem.</i>"
-
-            enviar_telegram(msg)
-            relatorio_geral.append(f"{estado}: {len(df_hoje)} imóveis registados")
+            enviar_telegram(f"🎉 <b>Base catalogada para {estado}!</b> ({len(df_hoje)} imóveis)")
+            relatorio_geral.append(f"{estado}: {len(df_hoje)} registados")
             continue
 
         try:
@@ -144,11 +131,18 @@ def monitorar():
         except Exception:
             df_base = pd.DataFrame()
 
+        # Lógica de identificação de novos e herança de datas antigas
         if 'Número do imóvel' in df_base.columns:
+            if 'Data_Inclusao' in df_base.columns:
+                # Transfere as datas antigas para os imóveis que já existiam; os novos mantêm a data_atual
+                mapa_datas = dict(zip(df_base['Número do imóvel'], df_base['Data_Inclusao']))
+                df_hoje['Data_Inclusao'] = df_hoje['Número do imóvel'].map(lambda x: mapa_datas.get(x, data_atual))
+            
             novos = df_hoje[~df_hoje['Número do imóvel'].isin(df_base['Número do imóvel'])]
         else:
             novos = pd.DataFrame()
 
+        # Sobrescreve a base com as datas corretas atualizadas
         df_hoje.to_csv(arquivo_base, sep=';', encoding='utf-8', index=False)
 
         if not novos.empty:
@@ -161,11 +155,11 @@ def monitorar():
 
                 mensagem += f"📍 {cidade} - {bairro}\n💰 R$ {preco}\n"
                 if link:
-                    mensagem += f"🔗 <a href='{link}'>Ver imóvel no site da Caixa</a>\n"
+                    mensagem += f"🔗 <a href='{link}'>Ver no site da Caixa</a>\n"
                 mensagem += "---\n"
 
             if len(novos) > 5:
-                mensagem += f"<i>+ {len(novos) - 5} outros imóveis novos em {estado}.</i>"
+                mensagem += f"<i>+ {len(novos) - 5} outros imóveis em {estado}.</i>"
 
             enviar_telegram(mensagem)
             relatorio_geral.append(f"{estado}: {len(novos)} novos detetados")

@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: '3.10'
       - name: Instalar dependências
-        run: pip install pandas requests
+        run: pip install pandas requests curl_cffi
       - name: Rodar script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}

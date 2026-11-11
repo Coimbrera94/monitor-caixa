@@ -21,10 +21,10 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor.py
-      - name: Salvar nova base de dados
+- name: Salvar nova base de dados
         run: |
           git config --global user.name 'Robo Caixa'
           git config --global user.email 'robo@caixa.com'
-          git add base_imoveis.csv
-          git commit -m "Atualizando base de imoveis" || exit 0
+          git add .
+          git commit -m "Atualizando bases de imoveis" || true
           git push

@@ -1,5 +1,6 @@
 import pandas as pd
 import requests
+from curl_cffi import requests as cffi_requests
 import os
 import io
 
@@ -11,73 +12,69 @@ def enviar_telegram(mensagem):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": mensagem, "parse_mode": "HTML"}
     try:
-        resp = requests.post(url, data=payload, timeout=15)
-        print(f"Envio Telegram: {resp.status_code}")
+        requests.post(url, data=payload, timeout=15)
     except Exception as e:
         print(f"Erro Telegram: {e}")
 
-def obter_csv_caixa(estado, session):
+def obter_csv_caixa(estado):
     url = f"https://venda-imoveis.caixa.gov.br/listaweb/Lista_imoveis_{estado}.csv"
+    
+    session = cffi_requests.Session(impersonate="chrome120")
+    
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
         'Referer': 'https://venda-imoveis.caixa.gov.br/sistema/busca-imovel.asp',
-        'Connection': 'keep-alive',
     }
-    resp = session.get(url, headers=headers, timeout=30)
     
-    # Valida se o retorno é um CSV real e não página de erro/bloqueio
-    if resp.status_code != 200 or len(resp.content) < 1000:
-        print(f"Falha ao baixar {estado}: retorno pequeno ou status {resp.status_code}")
+    try:
+        session.get("https://venda-imoveis.caixa.gov.br/sistema/busca-imovel.asp", headers=headers, timeout=20)
+        resp = session.get(url, headers=headers, timeout=30)
+    except Exception as e:
+        print(f"Erro de conexão com a Caixa ({estado}): {e}")
+        return None
+        
+    if resp.status_code != 200 or len(resp.content) < 1500:
+        print(f"Bloqueio detectado em {estado}. Status: {resp.status_code}, Tamanho: {len(resp.content)} bytes")
         return None
         
     try:
-        # A Caixa costuma ter linhas de cabeçalho descritivas antes dos dados; skiprows localiza o início
         conteudo = resp.content.decode('latin1', errors='ignore')
         linhas = conteudo.splitlines()
         linha_inicio = 0
-        for i, l in enumerate(linhas[:10]):
-            if 'Número do imóvel' in l or 'Numero do Imovel' in l or 'Cidade' in l:
+        for i, l in enumerate(linhas[:15]):
+            if any(termo in l for termo in ['Número do imóvel', 'Numero do Imovel', 'Cidade', 'Preço de venda']):
                 linha_inicio = i
                 break
                 
         df = pd.read_csv(io.StringIO(conteudo), sep=';', skiprows=linha_inicio, encoding='latin1', on_bad_lines='skip')
-        df.columns = [col.strip() for col in df.columns]
+        df.columns = [str(col).strip() for col in df.columns]
         
-        # Localiza coluna de identificador
         col_id = next((c for c in df.columns if 'Número do imóvel' in c or 'Numero' in c), None)
         if not col_id:
-            print(f"Estrutura inesperada para {estado}. Colunas: {list(df.columns)}")
+            print(f"Coluna de identificador ausente para {estado}. Colunas: {list(df.columns)}")
             return None
             
         df = df.rename(columns={col_id: 'Número do imóvel'})
         return df
     except Exception as e:
-        print(f"Erro de processamento {estado}: {e}")
+        print(f"Erro ao tratar planilha de {estado}: {e}")
         return None
 
 def monitorar():
-    session = requests.Session()
-    # Requisição inicial para obter cookies válidos do portal
-    try:
-        session.get("https://venda-imoveis.caixa.gov.br/sistema/busca-imovel.asp", timeout=15)
-    except Exception:
-        pass
-
     relatorio_geral = []
 
     for estado in ESTADOS:
-        print(f"Buscando dados reais da Caixa para {estado}...")
-        df_hoje = obter_csv_caixa(estado, session)
+        print(f"Baixando dados oficiais para {estado}...")
+        df_hoje = obter_csv_caixa(estado)
         
         if df_hoje is None or df_hoje.empty:
-            enviar_telegram(f"⚠️ <b>Aviso ({estado}):</b> Caixa bloqueou o download ou não retornou dados.")
+            enviar_telegram(f"⚠️ <b>Aviso ({estado}):</b> Bloqueio da Caixa detectado.")
             continue
 
         arquivo_base = f"base_imoveis_{estado}.csv"
 
-        # Primeira execução para este estado: salva e envia validação prática
         if not os.path.exists(arquivo_base):
             df_hoje.to_csv(arquivo_base, sep=';', encoding='latin1', index=False)
             
@@ -87,18 +84,17 @@ def monitorar():
             preco = exemplo.get('Preço de venda', exemplo.get('Valor de avaliação', 'N/D'))
             
             msg = (
-                f"🎉 <b>Base de dados criada para {estado}!</b>\n"
+                f"🎉 <b>Base criada com sucesso para {estado}!</b>\n"
                 f"Total de imóveis catalogados: <b>{len(df_hoje)}</b>\n\n"
-                f"<b>Exemplo de imóvel capturado:</b>\n"
+                f"<b>Imóvel capturado como exemplo:</b>\n"
                 f"📍 {cidade} - {bairro}\n"
                 f"💰 R$ {preco}\n\n"
-                f"<i>O sistema já está apto a avisar sobre novas entradas.</i>"
+                f"<i>O rastreador já está operando para novas entradas.</i>"
             )
             enviar_telegram(msg)
-            relatorio_geral.append(f"{estado}: {len(df_hoje)} imóveis salvos")
+            relatorio_geral.append(f"{estado}: {len(df_hoje)} imóveis cadastrados")
             continue
 
-        # Comparação com base existente
         try:
             df_base = pd.read_csv(arquivo_base, sep=';', encoding='latin1', on_bad_lines='skip')
         except Exception:
@@ -109,7 +105,6 @@ def monitorar():
         else:
             novos = pd.DataFrame()
 
-        # Atualiza a base com o estado atual
         df_hoje.to_csv(arquivo_base, sep=';', encoding='latin1', index=False)
 
         if not novos.empty:

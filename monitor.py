@@ -42,10 +42,9 @@ def obter_csv_caixa(estado):
         print(f"Retorno inválido ({estado}). Status: {resp.status_code}, Tamanho: {len(resp.content)} bytes")
         return None
         
-    # Descodificação adaptativa (tenta UTF-8 e recorre a Latin-1)
     try:
-        conteudo = resp.content.decode('utf-8')
-    except UnicodeDecodeError:
+        conteudo = resp.content.decode('utf-8', errors='ignore')
+    except Exception:
         conteudo = resp.content.decode('latin1', errors='ignore')
         
     if conteudo.strip().startswith('<') or '<html' in conteudo.lower()[:300]:
@@ -64,7 +63,6 @@ def obter_csv_caixa(estado):
         df = pd.read_csv(io.StringIO(conteudo), sep=';', skiprows=linha_inicio, on_bad_lines='skip')
         df.columns = [str(col).strip() for col in df.columns]
         
-        # Localização flexível da coluna de identificação
         col_id = None
         for c in df.columns:
             c_low = c.lower()
@@ -72,7 +70,6 @@ def obter_csv_caixa(estado):
                 col_id = c
                 break
                 
-        # Garantia de integridade: a Caixa posiciona sempre o ID na primeira coluna
         if not col_id and len(df.columns) > 0:
             col_id = df.columns[0]
             
@@ -97,7 +94,7 @@ def monitorar():
         arquivo_base = f"base_imoveis_{estado}.csv"
 
         if not os.path.exists(arquivo_base):
-            df_hoje.to_csv(arquivo_base, sep=';', encoding='latin1', index=False)
+            df_hoje.to_csv(arquivo_base, sep=';', encoding='utf-8', index=False)
             
             exemplo = df_hoje.iloc[0]
             cidade = obter_valor_col(exemplo, ['cidade'])
@@ -117,7 +114,7 @@ def monitorar():
             continue
 
         try:
-            df_base = pd.read_csv(arquivo_base, sep=';', encoding='latin1', on_bad_lines='skip')
+            df_base = pd.read_csv(arquivo_base, sep=';', encoding='utf-8', on_bad_lines='skip')
         except Exception:
             df_base = pd.DataFrame()
 
@@ -126,7 +123,7 @@ def monitorar():
         else:
             novos = pd.DataFrame()
 
-        df_hoje.to_csv(arquivo_base, sep=';', encoding='latin1', index=False)
+        df_hoje.to_csv(arquivo_base, sep=';', encoding='utf-8', index=False)
 
         if not novos.empty:
             mensagem = f"🚨 <b>{len(novos)} NOVOS IMÓVEIS ({estado})</b>\n\n"

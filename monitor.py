@@ -2,6 +2,7 @@ import pandas as pd
 import requests
 import os
 import io
+import time
 
 ESTADOS = ["PB", "SP"]
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip().replace("<", "").replace(">", "")
@@ -23,72 +24,71 @@ def obter_valor_col(row, termos, padrao='N/D'):
             return str(row[col])
     return padrao
 
-def obter_csv_caixa(estado):
+def obter_csv_caixa(estado, max_tentativas=3):
     url_alvo = f"https://venda-imoveis.caixa.gov.br/listaweb/Lista_imoveis_{estado}.csv"
-    
     params = {
         'api_key': SCRAPER_KEY,
         'url': url_alvo,
         'country_code': 'br'
     }
-    
-    try:
-        resp = requests.get('https://api.scraperapi.com/', params=params, timeout=60)
-    except Exception as e:
-        print(f"Erro na conexão com ScraperAPI ({estado}): {e}")
-        return None
-        
-    if resp.status_code != 200 or len(resp.content) < 1500:
-        print(f"Retorno inválido ({estado}). Status: {resp.status_code}, Tamanho: {len(resp.content)} bytes")
-        return None
-        
-    try:
-        conteudo = resp.content.decode('utf-8', errors='ignore')
-    except Exception:
-        conteudo = resp.content.decode('latin1', errors='ignore')
-        
-    if conteudo.strip().startswith('<') or '<html' in conteudo.lower()[:300]:
-        print(f"⚠️ Resposta em HTML recebida para {estado}:\n{conteudo[:300]}")
-        return None
-        
-    try:
-        linhas = conteudo.splitlines()
-        linha_inicio = 0
-        for i, l in enumerate(linhas[:15]):
-            l_lower = l.lower()
-            if any(termo in l_lower for termo in ['imovel', 'imóvel', 'imã³vel', 'cidade', 'bairro', 'preco', 'preço']):
-                linha_inicio = i
-                break
-                
-        df = pd.read_csv(io.StringIO(conteudo), sep=';', skiprows=linha_inicio, on_bad_lines='skip')
-        df.columns = [str(col).strip() for col in df.columns]
-        
-        col_id = None
-        for c in df.columns:
-            c_low = c.lower()
-            if ('im' in c_low and 'vel' in c_low) or 'num' in c_low or 'nãºm' in c_low:
-                col_id = c
-                break
-                
-        if not col_id and len(df.columns) > 0:
-            col_id = df.columns[0]
+
+    for tentativa in range(1, max_tentativas + 1):
+        print(f"[{estado}] Tentativa {tentativa} de {max_tentativas}...")
+        try:
+            resp = requests.get('https://api.scraperapi.com/', params=params, timeout=70)
             
-        print(f"Identificador selecionado para {estado}: '{col_id}' (Total de colunas: {len(df.columns)})")
-        df = df.rename(columns={col_id: 'Número do imóvel'})
-        return df
-    except Exception as e:
-        print(f"Erro ao processar folha de cálculo de {estado}: {e}")
-        return None
+            if resp.status_code == 200 and len(resp.content) >= 500:
+                try:
+                    conteudo = resp.content.decode('utf-8')
+                except UnicodeDecodeError:
+                    conteudo = resp.content.decode('latin1', errors='ignore')
+
+                if not (conteudo.strip().startswith('<') or '<html' in conteudo.lower()[:300]):
+                    linhas = conteudo.splitlines()
+                    linha_inicio = 0
+                    for i, l in enumerate(linhas[:15]):
+                        l_lower = l.lower()
+                        if any(termo in l_lower for termo in ['imovel', 'imóvel', 'cidade', 'bairro', 'preco', 'preço']):
+                            linha_inicio = i
+                            break
+
+                    df = pd.read_csv(io.StringIO(conteudo), sep=';', skiprows=linha_inicio, on_bad_lines='skip')
+                    df.columns = [str(col).strip() for col in df.columns]
+
+                    col_id = None
+                    for c in df.columns:
+                        c_low = c.lower()
+                        if ('im' in c_low and 'vel' in c_low) or 'num' in c_low or 'nãºm' in c_low:
+                            col_id = c
+                            break
+
+                    if not col_id and len(df.columns) > 0:
+                        col_id = df.columns[0]
+
+                    if col_id:
+                        df = df.rename(columns={col_id: 'Número do imóvel'})
+                        print(f"[{estado}] Sucesso na tentativa {tentativa}! Total de linhas: {len(df)}")
+                        return df
+            else:
+                print(f"[{estado}] Retorno inconsistente (Status: {resp.status_code}, Tamanho: {len(resp.content)} bytes)")
+
+        except Exception as e:
+            print(f"[{estado}] Erro na tentativa {tentativa}: {e}")
+
+        if tentativa < max_tentativas:
+            time.sleep(5)
+
+    return None
 
 def monitorar():
     relatorio_geral = []
 
     for estado in ESTADOS:
-        print(f"A obter imóveis de {estado}...")
+        print(f"A processar estado: {estado}...")
         df_hoje = obter_csv_caixa(estado)
-        
+
         if df_hoje is None or df_hoje.empty:
-            enviar_telegram(f"⚠️ <b>Aviso ({estado}):</b> Não foi possível descarregar os dados.")
+            enviar_telegram(f"⚠️ <b>Aviso ({estado}):</b> Não foi possível descarregar os dados após 3 tentativas.")
             continue
 
         arquivo_base = f"base_imoveis_{estado}.csv"
@@ -100,7 +100,7 @@ def monitorar():
             cidade = obter_valor_col(exemplo, ['cidade'])
             bairro = obter_valor_col(exemplo, ['bairro'])
             preco = obter_valor_col(exemplo, ['preço', 'preco', 'preã§o', 'valor'])
-            
+
             msg = (
                 f"🎉 <b>Base catalogada com sucesso para {estado}!</b>\n"
                 f"Total de imóveis ativos: <b>{len(df_hoje)}</b>\n\n"

@@ -11,7 +11,12 @@ SCRAPER_KEY = os.environ.get("SCRAPERAPI_KEY", "").strip()
 
 def enviar_telegram(mensagem):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": mensagem, "parse_mode": "HTML"}
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": mensagem,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": False
+    }
     try:
         requests.post(url, data=payload, timeout=15)
     except Exception as e:
@@ -21,8 +26,25 @@ def obter_valor_col(row, termos, padrao='N/D'):
     for col in row.index:
         c_low = str(col).lower()
         if any(t in c_low for t in termos):
-            return str(row[col])
+            val = str(row[col]).strip()
+            if val and val.lower() != 'nan':
+                return val
     return padrao
+
+def obter_link_imovel(row):
+    # Verifica se a própria planilha já traz coluna com link direto
+    link_csv = obter_valor_col(row, ['link'], padrao='')
+    if link_csv and link_csv.lower().startswith('http'):
+        return link_csv.replace('&', '&amp;')
+
+    # Monta a URL direta oficial da Caixa pelo número de identificação do imóvel
+    num = str(row.get('Número do imóvel', '')).strip()
+    if num.endswith('.0'):
+        num = num[:-2]
+
+    if num and num != 'N/D' and num.lower() != 'nan':
+        return f"https://venda-imoveis.caixa.gov.br/sistema/detalhe-imovel.asp?hdnimovel={num}"
+    return None
 
 def obter_csv_caixa(estado, max_tentativas=3):
     url_alvo = f"https://venda-imoveis.caixa.gov.br/listaweb/Lista_imoveis_{estado}.csv"
@@ -100,15 +122,19 @@ def monitorar():
             cidade = obter_valor_col(exemplo, ['cidade'])
             bairro = obter_valor_col(exemplo, ['bairro'])
             preco = obter_valor_col(exemplo, ['preço', 'preco', 'preã§o', 'valor'])
+            link_exemplo = obter_link_imovel(exemplo)
 
             msg = (
                 f"🎉 <b>Base catalogada com sucesso para {estado}!</b>\n"
                 f"Total de imóveis ativos: <b>{len(df_hoje)}</b>\n\n"
                 f"<b>Exemplo de imóvel capturado:</b>\n"
                 f"📍 {cidade} - {bairro}\n"
-                f"💰 R$ {preco}\n\n"
-                f"<i>O rastreador já está operacional na nuvem.</i>"
+                f"💰 R$ {preco}\n"
             )
+            if link_exemplo:
+                msg += f"🔗 <a href='{link_exemplo}'>Ver imóvel na Caixa</a>\n"
+            msg += "\n<i>O rastreador já está operacional na nuvem.</i>"
+
             enviar_telegram(msg)
             relatorio_geral.append(f"{estado}: {len(df_hoje)} imóveis registados")
             continue
@@ -131,7 +157,16 @@ def monitorar():
                 cidade = obter_valor_col(row, ['cidade'])
                 bairro = obter_valor_col(row, ['bairro'])
                 preco = obter_valor_col(row, ['preço', 'preco', 'preã§o', 'valor'])
-                mensagem += f"📍 {cidade} - {bairro}\n💰 R$ {preco}\n---\n"
+                link = obter_link_imovel(row)
+
+                mensagem += f"📍 {cidade} - {bairro}\n💰 R$ {preco}\n"
+                if link:
+                    mensagem += f"🔗 <a href='{link}'>Ver imóvel no site da Caixa</a>\n"
+                mensagem += "---\n"
+
+            if len(novos) > 5:
+                mensagem += f"<i>+ {len(novos) - 5} outros imóveis novos em {estado}.</i>"
+
             enviar_telegram(mensagem)
             relatorio_geral.append(f"{estado}: {len(novos)} novos detetados")
         else:

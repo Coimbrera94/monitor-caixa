@@ -1,7 +1,8 @@
 name: Monitor da Caixa
 on:
   schedule:
-    - cron: '0 12 * * *'
+    # 07:30, 13:30 e 18:30 no Horário de Brasília (10:30, 16:30 e 21:30 em UTC)
+    - cron: '30 10,16,21 * * *'
   workflow_dispatch: 
 
 jobs:
